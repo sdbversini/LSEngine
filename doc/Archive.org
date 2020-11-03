@@ -1,0 +1,10 @@
+u32 offset
+LSArc<ver>
+Path
+\0
+u8 n pointers
+[
+u64 pointer start
+u64 pointer end
+]*n
+data

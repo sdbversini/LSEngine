@@ -1,0 +1,28 @@
+name: Lunar Solstice Engine
+version: "0.0.1"
+author: Bastien V.
+about: VN Engine that doesn't guarrantee happy ends.
+args:
+    - verbose:
+        short: v
+        multiple: true
+        help: Sets the level of verbosity
+subcommands:
+    - compress:
+        about: compress into a package
+        version: "1.0"
+        author: Bastien V.
+        args :
+             - FOLDER:
+                help: Sets the folder to use as input.
+                required: true
+                multiple: true
+    - decompress:
+        about: decompress into a package
+        version: "0.1"
+        author: Bastien V.
+        args :
+             - FILE:
+                help: Sets the file to use as input.
+                required: true
+                multiple: true
