@@ -50,7 +50,19 @@ fn main() {
     }
 }
 
-fn zstd_file(bytes: &mut [u8]) {}
+fn zstd_compress_file(bytes: &[u8]) -> Vec<u8> {
+    println!("{}", bytes.len());
+    let data = zstd::block::compress(&bytes, 0).expect("problem compressing");
+    println!("now{}", &data[..].len());
+    data
+}
+
+fn zstd_decompress_file(bytes: &[u8]) -> Vec<u8> {
+    println!("{}", bytes.len());
+    let data = zstd::block::decompress(&bytes, bytes.len()).expect("problem decompressing");
+    println!("now{}", &data[..].len());
+    data
+}
 
 fn walk_folder(folder: &str) -> std::io::Result<Vec<PackedFile>> {
     let mut archive = Vec::<PackedFile>::new();
@@ -59,10 +71,11 @@ fn walk_folder(folder: &str) -> std::io::Result<Vec<PackedFile>> {
         .filter_map(Result::ok)
     {
         let is_dir = fs::metadata(&entry).unwrap().is_dir();
-        let byte_size = fs::metadata(&entry).unwrap().len();
         if !is_dir {
-            let mut bytes = fs::read(&entry).unwrap();
-            zstd_file(&mut bytes);
+            let bytes = fs::read(&entry).unwrap();
+            let bytes = zstd_compress_file(&bytes);
+            let byte_size = bytes.len();
+            println!("{}", byte_size);
             let file = PackedFile {
                 pointers: Vec::<PackedOffset>::new(),
                 path: entry
@@ -71,7 +84,7 @@ fn walk_folder(folder: &str) -> std::io::Result<Vec<PackedFile>> {
                     .unwrap()
                     .to_path_buf(),
                 byte_done: 0,
-                byte_size,
+                byte_size: byte_size.try_into().unwrap(),
                 bytes,
                 done: false,
                 slice: 10u32.pow((byte_size as f64).log10().ceil() as u32 - 1) as u64,
@@ -131,7 +144,6 @@ fn write_to_file(archive: PackedArchive, file_name: &String) -> std::io::Result<
     let version = b"LSArc1";
     bytes_to_write.extend_from_slice(version);
 
-    // TODO ENCRYPT ARCHIVE HERE
     for (key, value) in archive.header.0.iter() {
         // Path name
         let key_string_bytes = key.clone().into_os_string().into_string().unwrap();
@@ -194,10 +206,10 @@ fn decompress_file(file: &str) {
             let pointer_end = pointer_end + offset as usize;
             println!("{}:{},{}", cursor, pointer_start, pointer_end);
             cursor += 16;
-            data.extend_from_slice(&bytes[pointer_start..=pointer_end]);
+            data.extend(&bytes[pointer_start..=pointer_end]);
         }
+        let data = zstd_decompress_file(&data);
 
-        // TODO DECRYPT here
         let path = format!("extract/{}/{}", file, path_bytes);
         let path = std::path::Path::new(&path);
         let prefix = path.parent().unwrap();
