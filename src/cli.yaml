@@ -7,10 +7,16 @@ args:
         short: v
         multiple: true
         help: Sets the level of verbosity
+    - key:
+        short: k
+        long: key
+        takes_value: true
+        value_name: KEY
+        help: Use a key for encryption/decryption
 subcommands:
     - compress:
         about: compress into a package
-        version: "1.0"
+        version: "2.0"
         author: Bastien V.
         args :
              - FOLDER:
@@ -19,7 +25,7 @@ subcommands:
                 multiple: true
     - decompress:
         about: decompress into a package
-        version: "0.1"
+        version: "2.0"
         author: Bastien V.
         args :
              - FILE:

@@ -1,8 +1,11 @@
 #[macro_use]
+extern crate magic_crypt;
+#[macro_use]
 extern crate clap;
 
 use clap::App;
 use glob::glob;
+use magic_crypt::MagicCryptTrait;
 use std::{collections, convert::TryInto, fs, io::Write, path};
 
 #[derive(Debug, Clone, Copy)]
@@ -33,19 +36,24 @@ struct PackedArchive {
     bytes: Vec<u8>,
 }
 
+const DECRYPT_OK_BYTE: u8 = 7;
+const HEADER_VERSION: &[u8; 6] = b"LSArc2";
+
 fn main() {
     let yaml = load_yaml!(r#"cli.yaml"#);
     let matches = App::from_yaml(yaml).get_matches();
+    let key_string = matches.value_of("key").unwrap_or("default_encryption_key");
+
     if let Some(matches) = matches.subcommand_matches("compress") {
         for val in matches.values_of("FOLDER").unwrap() {
             let archive = walk_folder(val);
             let packed_archive = compress_archive(&mut archive.unwrap());
-            write_to_file(packed_archive, &format!("{}.ls", val)).unwrap();
+            write_to_file(packed_archive, &format!("{}.ls", val), &key_string).unwrap();
         }
     }
     if let Some(matches) = matches.subcommand_matches("decompress") {
         for val in matches.values_of("FILE").unwrap() {
-            decompress_file(val);
+            decompress_file(val, key_string);
         }
     }
 }
@@ -137,68 +145,85 @@ fn compress_archive(packed_file: &mut Vec<PackedFile>) -> PackedArchive {
     return archive;
 }
 
-fn write_to_file(archive: PackedArchive, file_name: &String) -> std::io::Result<()> {
+fn write_to_file(
+    archive: PackedArchive,
+    file_name: &String,
+    crypto_key: &str,
+) -> std::io::Result<()> {
     let mut bytes_to_write = Vec::<u8>::new();
+    let mut header_bytes = Vec::<u8>::new();
 
-    // Version
-    let version = b"LSArc1";
-    bytes_to_write.extend_from_slice(version);
+    //Crypto
+    let mc = new_magic_crypt!(crypto_key, 256);
+
+    header_bytes.push(DECRYPT_OK_BYTE);
 
     for (key, value) in archive.header.0.iter() {
         // Path name
         let key_string_bytes = key.clone().into_os_string().into_string().unwrap();
         let key_string_bytes = key_string_bytes.as_bytes();
-        bytes_to_write.extend_from_slice(key_string_bytes);
-        bytes_to_write.push(0);
+        header_bytes.extend_from_slice(key_string_bytes);
+        header_bytes.push(0);
 
         //Pointers
         let n_pointers: u8 = value.pointers.len() as u8;
-        bytes_to_write.push(n_pointers);
+        header_bytes.push(n_pointers);
         for pointer in &value.pointers {
             let start = pointer.0;
             let end = pointer.1;
-            bytes_to_write.extend_from_slice(&start.to_be_bytes());
-            bytes_to_write.extend_from_slice(&end.to_be_bytes());
+            header_bytes.extend_from_slice(&start.to_be_bytes());
+            header_bytes.extend_from_slice(&end.to_be_bytes());
         }
     }
 
+    let cypher = mc.encrypt_to_bytes(&header_bytes);
+    bytes_to_write.extend_from_slice(HEADER_VERSION);
+    bytes_to_write.extend_from_slice(&cypher[..]);
+
     let mut file = std::fs::File::create(file_name)?;
     let offset = bytes_to_write.len() as u32 + 4;
+    println!("offset: {}", offset);
     file.write_all(&offset.to_be_bytes())?;
     bytes_to_write.extend_from_slice(&archive.bytes);
     file.write_all(&bytes_to_write)?;
     Ok(())
 }
 
-fn decompress_file(file: &str) {
+fn decompress_file(file: &str, crypto_key: &str) {
     let bytes = fs::read(file).unwrap();
     let offset = u32::from_be_bytes(bytes[0..4].try_into().expect("Unable to read offset."));
     println!("{}", offset);
 
-    let header_bytes = &bytes[4..offset as usize];
+    let mc = new_magic_crypt!(crypto_key, 256);
 
-    let mut cursor: usize = 10;
-    while cursor < offset as usize {
+    let header_bytes = &bytes[10..offset as usize];
+    let header_bytes = mc
+        .decrypt_bytes_to_bytes(header_bytes)
+        .expect("Error using decrypter, secret key is probably incorrect");
+    assert_eq!(header_bytes[0], DECRYPT_OK_BYTE);
+
+    let mut cursor: usize = 0;
+    while cursor < header_bytes.len() as usize {
         let old_cursor = cursor;
-        while &[bytes[cursor]] != b"\0" {
+        while &[header_bytes[cursor]] != b"\0" {
             cursor += 1;
         }
-        let mut path_bytes = String::from_utf8_lossy(&bytes[old_cursor..cursor]);
+        let path_bytes = String::from_utf8_lossy(&header_bytes[old_cursor..cursor]);
         println!("{}", path_bytes);
 
         cursor += 1;
-        let n_pointers = bytes[cursor];
+        let n_pointers = header_bytes[cursor];
         cursor += 1;
 
         let mut data = Vec::<u8>::new();
         for _ in 1..=n_pointers {
             let pointer_start = u64::from_be_bytes(
-                bytes[cursor..cursor + 8]
+                header_bytes[cursor..cursor + 8]
                     .try_into()
                     .expect("unable to read bytes"),
             ) as usize;
             let pointer_end = u64::from_be_bytes(
-                bytes[cursor + 8..cursor + 16]
+                header_bytes[cursor + 8..cursor + 16]
                     .try_into()
                     .expect("unable to read bytes"),
             ) as usize;

@@ -1,10 +1,15 @@
-u32 offset
-LSArc<ver>
-Path
-\0
-u8 n pointers
-[
-u64 pointer start
-u64 pointer end
-]*n
-data
+|             | Value           | Description              |
+|-------------+-----------------+--------------------------|
+|             | 1x u32          | Offset                   |
+|             | "LSArc<ver>"    | Identifier               |
+|             | 1x u8           | Encryption ok byte       |
+| * files     |                 |                          |
+|             | String          | Path                     |
+|             | null terminator | End of path              |
+|             | 1x u8           | Pointers count           |
+| * n pointer |                 |                          |
+|             | u64             | Pointer to start of data |
+|             | u64             | Pointer to end of data   |
+| end         |                 |                          |
+| data        | starts          | here                     |
+|-------------+-----------------+--------------------------|

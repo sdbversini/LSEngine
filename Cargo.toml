@@ -10,4 +10,5 @@ edition = "2018"
 clap = {version = "2.33", features = ["yaml"]} # Argument Parsing
 glob = "0.3.0"
 zstd = "0.5.3+zstd.1.4.5"
+magic-crypt = "3.1.5"
 imgui-ext = "0.3.0"
